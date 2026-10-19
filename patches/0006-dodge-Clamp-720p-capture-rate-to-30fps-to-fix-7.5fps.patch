@@ -1,0 +1,52 @@
+From 71625186b8373e2795fabf5b3cfe6d6a9564a459 Mon Sep 17 00:00:00 2001
+From: Hecheng Yu <kde-yyds@qq.com>
+Date: Sun, 13 Sep 2026 21:06:15 +0800
+Subject: [PATCH 6/7] dodge: Clamp 720p capture rate to 30fps to fix 7.5fps
+ recording
+
+The 4x-slow-motion problem of the 8K fix applies to 720p as well: after
+switching 4K120 -> 720p, CommonVideoMode.li() returns 120.0 (stale fps
+state) and MediaRecorder.setCaptureRate(120) is sent while the encoder
+outputs 30fps, producing a file that plays at 7.5fps (120/30).
+
+Extend the li() clamp so it also returns 30.0 when the video size is 720p:
+
+  com/oplus/camera/module/a.li()  if G6() == "video_size_8k"  return 30.0
+                                  if G6() == "video_size_720p" return 30.0
+
+With this, 720p30 records at the correct 30fps cadence. 1080p120/4K120
+still bypass the clamp. Only required on OxygenOS 16.0.8.301 and later,
+where the native encoder honors the time-lapse capture rate.
+---
+ smali_classes12/com/oplus/camera/module/a.smali | 13 +++++++++++--
+ 1 file changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/smali_classes12/com/oplus/camera/module/a.smali b/smali_classes12/com/oplus/camera/module/a.smali
+index a36d2d7..8024be7 100644
+--- a/smali_classes12/com/oplus/camera/module/a.smali
++++ b/smali_classes12/com/oplus/camera/module/a.smali
+@@ -31918,10 +31918,19 @@
+ 
+     invoke-virtual {v0, v1}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
+ 
+-    move-result v0
++    move-result v1
++
++    if-nez v1, :cond_30fps
++
++    const-string v1, "video_size_720p"
++
++    invoke-virtual {v0, v1}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
++
++    move-result v1
+ 
+-    if-eqz v0, :cond_8k
++    if-eqz v1, :cond_8k
+ 
++    :cond_30fps
+     const-wide/high16 v0, 0x403e000000000000L    # 30.0
+ 
+     invoke-static {v0, v1}, Ljava/lang/Double;->valueOf(D)Ljava/lang/Double;
+-- 
+2.55.0
+

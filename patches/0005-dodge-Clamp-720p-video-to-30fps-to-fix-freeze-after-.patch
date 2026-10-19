@@ -1,0 +1,101 @@
+From 44868094771674abdc2310bb4ea0e401590a5c6f Mon Sep 17 00:00:00 2001
+From: Hecheng Yu <kde-yyds@qq.com>
+Date: Sun, 13 Sep 2026 21:06:06 +0800
+Subject: [PATCH 5/7] dodge: Clamp 720p video to 30fps to fix freeze after
+ using 4K120
+
+Same stale-fps problem as the 8K fix, but for 720p. 720p is the smallest
+resolution on the rear main camera and, like 8K, only supports 30fps. Once
+120fps is selected at 1080p/4K the app's fps state stays 120 when switching
+to 720p, and the MediaRecorder is configured for 1280x720@120 - which the
+video core rejects, causing the same preview freeze on OxygenOS 16.0.8.301.
+
+Clamp to 30fps at the same three recorder configuration points, gated on
+the 720p width (0x500) in addition to the 8K width (0x1e00):
+
+  u0.A(II)                 re-apply 30fps when setVideoSize sees 1280 width
+  u0.v(CamcorderProfile)   clamp profile.videoFrameRate to 30 at 1280 width
+  g.buildSession           send video_30fps for the session at video_size_720p
+
+The 8K branches from the earlier patch are preserved. 1080p120/4K120 are
+still untouched. After this patch, 720p30 records cleanly when coming from
+4K120.
+
+Note: the 720p cap is intentionally mode-gated to commonVideo only; without
+that, 720p 240/480fps slow motion would be broken (see the last patch).
+---
+ smali_classes12/ck/u0.smali | 24 ++++++++++++++++++++++++
+ smali_classes29/la/e.smali  | 13 +++++++++++--
+ 2 files changed, 35 insertions(+), 2 deletions(-)
+
+diff --git a/smali_classes12/ck/u0.smali b/smali_classes12/ck/u0.smali
+index df325e3..acd699f 100644
+--- a/smali_classes12/ck/u0.smali
++++ b/smali_classes12/ck/u0.smali
+@@ -618,6 +618,15 @@
+ .method public final A(II)V
+     .locals 2
+ 
++    const/16 v0, 0x500
++
++    if-ne p1, v0, :cond_720
++
++    const/16 v0, 0x1e
++
++    invoke-virtual {p0, v0}, Lck/u0;->y(I)V
++
++    :cond_720
+     const/16 v0, 0x1e00
+ 
+     if-lt p1, v0, :cond_8k
+@@ -6878,6 +6887,21 @@
+ 
+     iget v0, p1, Landroid/media/CamcorderProfile;->videoFrameWidth:I
+ 
++    const/16 v1, 0x500
++
++    if-ne v0, v1, :cond_720
++
++    iget v0, p1, Landroid/media/CamcorderProfile;->videoFrameRate:I
++
++    const/16 v1, 0x1e
++
++    if-le v0, v1, :cond_720
++
++    iput v1, p1, Landroid/media/CamcorderProfile;->videoFrameRate:I
++
++    :cond_720
++    iget v0, p1, Landroid/media/CamcorderProfile;->videoFrameWidth:I
++
+     const/16 v1, 0x1e00
+ 
+     if-lt v0, v1, :cond_8k
+diff --git a/smali_classes29/la/e.smali b/smali_classes29/la/e.smali
+index bd83ea7..e2a3fa8 100644
+--- a/smali_classes29/la/e.smali
++++ b/smali_classes29/la/e.smali
+@@ -1885,10 +1885,19 @@
+ 
+     invoke-virtual {v2, v1}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
+ 
+-    move-result v1
++    move-result v2
++
++    if-nez v2, :cond_30fps
++
++    const-string v2, "video_size_720p"
++
++    invoke-virtual {v2, v1}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
++
++    move-result v2
+ 
+-    if-eqz v1, :cond_8k
++    if-eqz v2, :cond_8k
+ 
++    :cond_30fps
+     const-string v12, "video_30fps"
+ 
+     :cond_8k
+-- 
+2.55.0
+

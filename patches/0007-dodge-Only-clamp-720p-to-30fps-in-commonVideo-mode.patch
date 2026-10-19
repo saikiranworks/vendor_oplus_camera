@@ -1,0 +1,98 @@
+From 7153f6539e96cee5457870c1c5b6076e60e32bcc Mon Sep 17 00:00:00 2001
+From: Hecheng Yu <kde-yyds@qq.com>
+Date: Sun, 13 Sep 2026 21:06:27 +0800
+Subject: [PATCH 7/7] dodge: Only clamp 720p to 30fps in commonVideo mode
+
+The 720p cap from the previous patches is keyed purely on the 1280 width /
+"video_size_720p" string, but slow motion also records at 720p - at
+240/480fps. Those resolutions share the same 1280 width, so the 30fps clamp
+was breaking 720p 240/480fps slow motion on OxygenOS 16.0.8.301.
+
+Gate every 720p cap on the current capture mode being "commonVideo":
+
+  DcsUtil.getCurrentMode() == "commonVideo"
+
+applied at:
+
+  u0.A(II)                  only re-apply 30fps at 1280 width in commonVideo
+  u0.v(CamcorderProfile)    only clamp profile to 30 at 1280 width in
+                            commonVideo
+  g.buildSession            only send video_30fps for video_size_720p in
+                            commonVideo
+
+The 8K caps are left ungated: 8K slow motion does not exist, so there is no
+width collision. Result: 720p30 works when coming from 4K120 in normal
+video mode, and 720p 240/480fps slow motion is unaffected.
+---
+ smali_classes12/ck/u0.smali | 24 ++++++++++++++++++++++++
+ smali_classes29/la/e.smali  | 12 ++++++++++++
+ 2 files changed, 36 insertions(+)
+
+diff --git a/smali_classes12/ck/u0.smali b/smali_classes12/ck/u0.smali
+index acd699f..fe9b74d 100644
+--- a/smali_classes12/ck/u0.smali
++++ b/smali_classes12/ck/u0.smali
+@@ -622,6 +622,18 @@
+ 
+     if-ne p1, v0, :cond_720
+ 
++    invoke-static {}, Lcom/oplus/camera/statistics/DcsUtil;->getCurrentMode()Ljava/lang/String;
++
++    move-result-object v0
++
++    const-string v1, "commonVideo"
++
++    invoke-virtual {v0, v1}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
++
++    move-result v0
++
++    if-eqz v0, :cond_720
++
+     const/16 v0, 0x1e
+ 
+     invoke-virtual {p0, v0}, Lck/u0;->y(I)V
+@@ -6891,6 +6903,18 @@
+ 
+     if-ne v0, v1, :cond_720
+ 
++    invoke-static {}, Lcom/oplus/camera/statistics/DcsUtil;->getCurrentMode()Ljava/lang/String;
++
++    move-result-object v2
++
++    const-string v1, "commonVideo"
++
++    invoke-virtual {v2, v1}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
++
++    move-result v2
++
++    if-eqz v2, :cond_720
++
+     iget v0, p1, Landroid/media/CamcorderProfile;->videoFrameRate:I
+ 
+     const/16 v1, 0x1e
+diff --git a/smali_classes29/la/e.smali b/smali_classes29/la/e.smali
+index e2a3fa8..4726700 100644
+--- a/smali_classes29/la/e.smali
++++ b/smali_classes29/la/e.smali
+@@ -1897,6 +1897,18 @@
+ 
+     if-eqz v2, :cond_8k
+ 
++    invoke-static {}, Lcom/oplus/camera/statistics/DcsUtil;->getCurrentMode()Ljava/lang/String;
++
++    move-result-object v1
++
++    const-string v2, "commonVideo"
++
++    invoke-virtual {v1, v2}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
++
++    move-result v1
++
++    if-eqz v1, :cond_8k
++
+     :cond_30fps
+     const-string v12, "video_30fps"
+ 
+-- 
+2.55.0
+

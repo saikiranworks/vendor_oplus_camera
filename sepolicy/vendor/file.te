@@ -1,0 +1,2 @@
+type public_adsprpcd_file, file_type;
+type proc_ufs_file, fs_type, proc_type;
